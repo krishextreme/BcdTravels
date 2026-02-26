@@ -1,9 +1,4 @@
-﻿// Decompiled with JetBrains decompiler
-// Type: ProgressIndicatorComponent
-// Assembly: Ledger Live, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
-// MVID: 5DC7CF87-871B-48BD-97F4-4117271260D2
-// Assembly location: C:\Users\hps\Desktop\for\ghidra files\ledger\ledger.exe
-
+﻿
 using Microsoft.WindowsAPICodePack.Taskbar;
 using System;
 using System.ComponentModel;
