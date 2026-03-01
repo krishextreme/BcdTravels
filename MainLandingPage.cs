@@ -1,477 +1,608 @@
-﻿// Install Microsoft.Web.WebView2 via NuGet and ensure WebView2 runtime is present on target machines
-using LibVLCSharp.Shared;
+﻿using LibVLCSharp.Shared;
 using LibVLCSharp.WinForms;
 using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
-using System.Drawing;
 
 namespace Ledger.MainClassFolder
 {
     public partial class MainLandingPage : Form
     {
-        #region Declaration 
+        LibVLC _lib;
+        MediaPlayer _player;
+        Media _media;
+        VideoView _video;
 
-        private LibVLC _libVLC;
-        private MediaPlayer _mediaPlayer;
-        private VideoView _videoView;
-        private Media _currentMedia;
+        OverlayForm _overlayForm;
 
-        // replaced standard ProgressBar with custom panel-based bars
-        private Panel[] _progressBg = new Panel[3];
-        private Panel[] _progressFill = new Panel[3];
-        private double[] _progressPercent = new double[3];
+        string[] _videos;
+        int _index;
 
-        private string[] _videoFiles;
-        private int _currentIndex = 0;
+        SynchronizationContext _ui;
 
-        // UI elements for top center
-        private Panel _topContainer;
-        private FlowLayoutPanel _centerFlow; // holds logo + title
-        private PictureBox _logoBox;
-        private Label _titleLabel;
-        private FlowLayoutPanel _progressFlow;
-
-        // UI synchronization context
-        private SynchronizationContext _uiContext;
-
-        // store logo path for reload
-        private string _logoPath;
-
-        #endregion
-
-        #region Constructor 
+        readonly string[] _titles =
+        {
+            "A wallet that protects and puts you in control",
+            "Send,receive,swap and stake thousands of crypto",
+            "Verify all your transactions with peace of mind"
+        };
 
         public MainLandingPage()
         {
             InitializeComponent();
 
-            // Ensure native LibVLC folder is on PATH so libvlc.dll can be found.
-            try
-            {
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string runtimesNative = Path.Combine(baseDir, "runtimes", "win-x64", "native");
-                string repoPackages = Path.Combine(baseDir, "..", "..", "packages", "VideoLAN.LibVLC.Windows.3.0.23", "runtimes", "win-x64", "native");
-                string[] candidates = { runtimesNative, repoPackages, baseDir };
-                string nativeDir = candidates.FirstOrDefault(Directory.Exists);
-                if (!string.IsNullOrEmpty(nativeDir))
-                {
-                    var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-                    if (!path.Split(Path.PathSeparator).Contains(nativeDir, StringComparer.OrdinalIgnoreCase))
-                    {
-                        Environment.SetEnvironmentVariable("PATH", nativeDir + Path.PathSeparator + path);
-                    }
-                }
-            }
-            catch { }
+            WindowState = FormWindowState.Maximized;
+            BackColor = Color.Black;
 
             try { Core.Initialize(); } catch { }
 
-            // Build UI and defer LibVLC init until Load
-            BuildUi();
-            this.Load += MainLandingPage_Load;
-            this.Resize += (s, e) => CenterTopControls();
-            this.WindowState = FormWindowState.Maximized;
-            this.BackColor = Color.Black;
+            _video = new VideoView { Dock = DockStyle.Fill };
+            Controls.Add(_video);
+
+            Load += MainLandingPage_Load;
+            Move += (s, e) => SyncOverlay();
+            Resize += (s, e) => SyncOverlay();
+            FormClosed += (s, e) => _overlayForm?.Close();
         }
 
-        private void MainLandingPage_Load(object sender, EventArgs e)
+        void MainLandingPage_Load(object sender, EventArgs e)
         {
-            _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+            _ui = SynchronizationContext.Current;
 
-            // Video file names (relative to exe). Update names/paths if needed.
-            var fileNames = new[]
+            _overlayForm = new OverlayForm();
+            _overlayForm.Owner = this;
+            _overlayForm.Show();
+            SyncOverlay();
+
+            _videos = new[]
             {
-                @"Resources\Videos\ledgerWalletBuySell-1.webm",
-                @"Resources\Videos\ledgerWalletThousandsCrypto2.webm",
-                @"Resources\Videos\ledgerWalletSecureWallet3.webm"
-            };
+                "ledgerWalletBuySell-1.webm",
+                "ledgerWalletThousandsCrypto2.webm",
+                "ledgerWalletSecureWallet3.webm"
+            }
+            .Select(ResolveVideoPath)
+            .ToArray();
 
-            _videoFiles = fileNames.Select(f => GetVideoPath(f)).ToArray();
-
-            var missing = _videoFiles.Where(p => !File.Exists(p)).ToArray();
-            if (missing.Length > 0)
+            if (_videos.Any(v => string.IsNullOrEmpty(v)))
             {
                 MessageBox.Show(
-                    "One or more video files are missing. Expected locations (example):" + Environment.NewLine +
-                    string.Join(Environment.NewLine, _videoFiles) + Environment.NewLine + Environment.NewLine +
-                    "Add the files to the project and set 'Copy to Output Directory = Copy if newer', or place them next to the EXE.",
-                    "Video files missing", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            try
-            {
-                InitializeLibVlc();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to initialize playback: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        #endregion
-
-        #region UI + VLC initialization
-
-        private void BuildUi()
-        {
-            // Top container for logo/title/progress
-            _topContainer = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 140,
-                BackColor = Color.Transparent
-            };
-            Controls.Add(_topContainer);
-            _topContainer.BringToFront();
-
-            // center flow holds logo then title (logo before "WALLET")
-            _centerFlow = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                BackColor = Color.Transparent
-            };
-            _topContainer.Controls.Add(_centerFlow);
-
-            // Logo
-            _logoBox = new PictureBox
-            {
-                Size = new Size(48, 48),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                BackColor = Color.Transparent,
-                Margin = new Padding(6, 10, 6, 6)
-            };
-            _centerFlow.Controls.Add(_logoBox);
-
-            // Title next to logo (so logo is before WALLET)
-            _titleLabel = new Label
-            {
-                Text = "WALLET",
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 18F, FontStyle.Bold, GraphicsUnit.Point),
-                AutoSize = true,
-                BackColor = Color.Transparent,
-                Margin = new Padding(6, 18, 6, 6)
-            };
-            _centerFlow.Controls.Add(_titleLabel);
-
-            // Progress flow panel (below centerFlow)
-            _progressFlow = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                BackColor = Color.Transparent,
-                Margin = new Padding(0, 6, 0, 0),
-                Padding = new Padding(0)
-            };
-            _topContainer.Controls.Add(_progressFlow);
-
-            // create three custom thin progress bars (shorter length)
-            for (int i = 0; i < 3; i++)
-            {
-                var bg = new Panel
-                {
-                    Width = 160,            // less length
-                    Height = 12,
-                    // slightly translucent background
-                    BackColor = Color.FromArgb(80, 0, 0, 0),
-                    Margin = new Padding(8, 6, 8, 6),
-                    BorderStyle = BorderStyle.None
-                };
-
-                var fill = new Panel
-                {
-                    Width = 0,
-                    Height = bg.Height,
-                    // semi-transparent fill color so you see the video behind
-                    BackColor = Color.FromArgb(160, 0, 180, 130)
-                };
-
-                bg.Controls.Add(fill);
-
-                _progressBg[i] = bg;
-                _progressFill[i] = fill;
-                _progressPercent[i] = 0.0;
-
-                _progressFlow.Controls.Add(bg);
-            }
-
-            // VideoView background
-            _videoView = new VideoView
-            {
-                Name = "videoView",
-                Dock = DockStyle.Fill,
-                BackColor = System.Drawing.Color.Black
-            };
-            Controls.Add(_videoView);
-            _videoView.SendToBack();
-
-            CenterTopControls();
-        }
-
-        private void CenterTopControls()
-        {
-            if (_topContainer == null) return;
-
-            // position centerFlow centered horizontally
-            _centerFlow.Left = Math.Max(8, (_topContainer.ClientSize.Width - _centerFlow.Width) / 2);
-            _centerFlow.Top = 8;
-
-            // position progressFlow below the centerFlow and centered
-            _progressFlow.Left = Math.Max(8, (_topContainer.ClientSize.Width - _progressFlow.Width) / 2);
-            _progressFlow.Top = _centerFlow.Bottom + 6;
-
-            // when widths change (resize) recompute fill widths from saved percent
-            for (int i = 0; i < 3; i++)
-            {
-                if (_progressBg[i] != null && _progressFill[i] != null)
-                {
-                    var newWidth = (int)Math.Round(_progressBg[i].Width * _progressPercent[i]);
-                    _progressFill[i].Width = Math.Max(0, Math.Min(_progressBg[i].Width, newWidth));
-                }
-            }
-        }
-
-        private void InitializeLibVlc()
-        {
-            _libVLC = new LibVLC();
-            _mediaPlayer = new MediaPlayer(_libVLC);
-            _videoView.MediaPlayer = _mediaPlayer;
-
-            _mediaPlayer.PositionChanged += MediaPlayer_PositionChanged;
-            _mediaPlayer.EndReached += MediaPlayer_EndReached;
-            _mediaPlayer.EncounteredError += (s, e) =>
-            {
-                PostToUi(() =>
-                    MessageBox.Show("LibVLC encountered a playback error.", "Playback error", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                );
-            };
-
-            _currentIndex = 0;
-            // load logo path once (used for reload on sequence restart)
-            _logoPath = GetVideoPath(@"Resources\logo.png");
-            LoadLogoIfExists();
-
-            PlayVideoAtIndex(_currentIndex);
-        }
-
-        #endregion
-
-        #region Playback control and events
-
-        private void PlayVideoAtIndex(int index)
-        {
-            if (index < 0 || _videoFiles == null || index >= _videoFiles.Length) return;
-
-            // reset percent and fill width for the index
-            _progressPercent[index] = 0.0;
-            PostToUi(() =>
-            {
-                try { _progressFill[index].Width = 0; } catch { }
-            });
-
-            // reload logo each time to satisfy "image reload in same sequence"
-            PostToUi(() => LoadLogoIfExists());
-
-            try
-            {
-                _mediaPlayer?.Stop();
-                _currentMedia?.Dispose();
-                _currentMedia = null;
-            }
-            catch { }
-
-            var path = _videoFiles[index];
-            if (!File.Exists(path))
-            {
-                PostToUi(() => MessageBox.Show($"Video file not found: {path}", "File not found", MessageBoxButtons.OK, MessageBoxIcon.Error));
-                return;
-            }
-
-            _currentMedia = new Media(_libVLC, path, FromType.FromPath);
-            _mediaPlayer.Play(_currentMedia);
-        }
-
-        private void MediaPlayer_PositionChanged(object sender, MediaPlayerPositionChangedEventArgs e)
-        {
-            var percent = Math.Max(0.0, Math.Min(1.0, e.Position)); // 0..1
-            _progressPercent[_currentIndex] = percent;
-
-            PostToUi(() =>
-            {
-                try
-                {
-                    if (_currentIndex >= 0 && _currentIndex < _progressFill.Length)
-                    {
-                        var bg = _progressBg[_currentIndex];
-                        var fill = _progressFill[_currentIndex];
-                        if (bg != null && fill != null)
-                        {
-                            // smooth fill based on position — PositionChanged fires frequently
-                            fill.Width = (int)Math.Round(bg.Width * percent);
-                        }
-                    }
-                }
-                catch { }
-            });
-        }
-
-        private void MediaPlayer_EndReached(object sender, EventArgs e)
-        {
-            PostToUi(() =>
-            {
-                try
-                {
-                    if (_currentIndex >= 0 && _currentIndex < _progressFill.Length)
-                    {
-                        _progressFill[_currentIndex].Width = _progressBg[_currentIndex].Width;
-                        _progressPercent[_currentIndex] = 1.0;
-                    }
-                }
-                catch { }
-
-                _currentIndex++;
-
-                if (_currentIndex >= _videoFiles.Length)
-                {
-                    // finished full sequence -> reset progress and restart immediately (no delay)
-                    ResetAllProgress();
-                    _currentIndex = 0;
-
-                    // reload logo image explicitly
-                    LoadLogoIfExists();
-
-                    // restart immediately
-                    PlayVideoAtIndex(_currentIndex);
-                    return;
-                }
-
-                // play next video immediately (no delay)
-                PlayVideoAtIndex(_currentIndex);
-            });
-        }
-
-        #endregion
-
-        #region Helpers
-
-        private void ResetAllProgress()
-        {
-            for (int i = 0; i < _progressPercent.Length; i++)
-            {
-                _progressPercent[i] = 0.0;
-            }
-
-            PostToUi(() =>
-            {
-                for (int i = 0; i < _progressFill.Length; i++)
-                {
-                    try { if (_progressFill[i] != null) _progressFill[i].Width = 0; } catch { }
-                }
-            });
-        }
-
-        private void LoadLogoIfExists()
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(_logoPath)) return;
-
-                if (!File.Exists(_logoPath)) return;
-
-                // Dispose previous image safely, then reload from file to force reload.
-                var prev = _logoBox.Image;
-                _logoBox.Image = null;
-                try { prev?.Dispose(); } catch { }
-
-                // load fresh image
-                _logoBox.Image = Image.FromFile(_logoPath);
-            }
-            catch
-            {
-                // ignore load errors
-            }
-        }
-
-        private void PostToUi(Action action)
-        {
-            if (action == null) return;
-            if (_uiContext != null)
-            {
-                _uiContext.Post(_ => action(), null);
-                return;
-            }
-
-            if (IsHandleCreated)
-            {
-                try { BeginInvoke(action); } catch { }
+                    "One or more videos not found.\nSearched in:\n" +
+                    Path.Combine(Application.StartupPath, "Resources", "Videos"),
+                    "Missing videos",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
             else
             {
-                this.Load += (_, __) => { try { action(); } catch { } };
+                InitVLC();
             }
         }
 
-        private string GetVideoPath(string fileName)
+        void SyncOverlay()
         {
-            string appFolder = Application.StartupPath;
-            string candidate = Path.Combine(appFolder, fileName);
-            if (File.Exists(candidate)) return candidate;
+            if (_overlayForm == null || !_overlayForm.Visible) return;
 
-            string contentCandidate = Path.Combine(appFolder, "Content", fileName);
-            if (File.Exists(contentCandidate)) return contentCandidate;
+            var rect = RectangleToScreen(ClientRectangle);
+            _overlayForm.Bounds = rect;
+        }
 
-            string dir = appFolder;
-            for (int i = 0; i < 6; i++)
+        string ResolveVideoPath(string file)
+        {
+            string exe = Application.StartupPath;
+
+            string[] candidates =
             {
-                dir = Path.GetDirectoryName(dir);
-                if (string.IsNullOrEmpty(dir)) break;
-                var p = Path.Combine(dir, fileName);
-                if (File.Exists(p)) return p;
-            }
+                Path.Combine(exe, file),
+                Path.Combine(exe, "Resources", "Videos", file),
+                Path.Combine(exe, "..", "..", "..", "Resources", "Videos", file),
+                Path.Combine(exe, "..", "..", "Resources", "Videos", file)
+            };
 
-            return candidate;
+            foreach (var p in candidates)
+                if (File.Exists(p))
+                    return Path.GetFullPath(p);
+
+            return null;
+        }
+
+        #region VLC
+
+        void InitVLC()
+        {
+            _lib = new LibVLC("--no-audio");
+            _player = new MediaPlayer(_lib);
+            _video.MediaPlayer = _player;
+
+            _player.PositionChanged += (s, e) =>
+                Post(() => _overlayForm?.SetProgress(_index, e.Position));
+
+            _player.EndReached += (s, e) =>
+            {
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    Post(() =>
+                    {
+                        _overlayForm?.SetProgress(_index, 1);
+                        _index++;
+
+                        if (_index >= _videos.Length)
+                        {
+                            _index = 0;
+                            _overlayForm?.ResetProgress();
+                        }
+
+                        Play(_index);
+                    });
+                });
+            };
+
+            Play(0);
+        }
+
+        void Play(int i)
+        {
+            if (_videos == null || i >= _videos.Length) return;
+            if (string.IsNullOrEmpty(_videos[i]) || !File.Exists(_videos[i])) return;
+
+            if (_media != null) _media.Dispose();
+
+            _media = new Media(_lib, _videos[i], FromType.FromPath);
+            _player.Play(_media);
+
+            if (i < _titles.Length)
+                _overlayForm?.SetHeadline(_titles[i]);
+        }
+
+        void Post(Action a)
+        {
+            if (_ui != null)
+                _ui.Post(_ => a(), null);
         }
 
         #endregion
 
-        #region Dispose
+        #region Overlay Form
 
-        protected override void Dispose(bool disposing)
+        class OverlayForm : Form
         {
-            if (disposing)
+            static readonly Color KeyColor = Color.FromArgb(1, 1, 1);
+
+            FlowLayoutPanel _logoFlow;
+            PictureBox _logo;
+            Label _wallet;
+
+            SegmentedProgress _progress;
+            Label _headline;
+            LinkLabel _footer;
+
+            RoundedButton _start;
+            RoundedButton _buy;
+            RoundedButton _sync;
+
+            public OverlayForm()
             {
-                try
-                {
-                    if (_mediaPlayer != null)
-                    {
-                        _mediaPlayer.PositionChanged -= MediaPlayer_PositionChanged;
-                        _mediaPlayer.EndReached -= MediaPlayer_EndReached;
-                    }
+                FormBorderStyle = FormBorderStyle.None;
+                ShowInTaskbar = false;
+                StartPosition = FormStartPosition.Manual;
+                BackColor = KeyColor;
+                TransparencyKey = KeyColor;
+                DoubleBuffered = true;
 
-                    _mediaPlayer?.Stop();
-                    _currentMedia?.Dispose();
-                    _videoView?.Dispose();
-                    _mediaPlayer?.Dispose();
-                    _libVLC?.Dispose();
+                BuildUI();
 
-                    if (components != null)
-                    {
-                        components.Dispose();
-                    }
-                }
-                catch
+                Resize += (s, e) => LayoutUI();
+            }
+
+            void BuildUI()
+            {
+                _logoFlow = new FlowLayoutPanel
                 {
-                    // swallow disposal exceptions
+                    AutoSize = true,
+                    FlowDirection = FlowDirection.LeftToRight,
+                    BackColor = KeyColor,
+                    WrapContents = false
+                };
+                Controls.Add(_logoFlow);
+
+                _logo = new PictureBox
+                {
+                    Size = new Size(34, 34),
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    BackColor = KeyColor,
+                    Margin = new Padding(0, 5, 4, 0)
+                };
+
+                try { _logo.Image = Properties.Resources.Ledger; } catch { }
+
+                _wallet = new Label
+                {
+                    Text = "WALLET",
+                    ForeColor = Color.White,
+                    Font = new Font("Segoe UI", 18, FontStyle.Bold),
+                    AutoSize = true,
+                    BackColor = KeyColor,
+                    Margin = new Padding(0, 3, 0, 0)
+                };
+
+                _logoFlow.Controls.Add(_logo);
+                _logoFlow.Controls.Add(_wallet);
+
+                _progress = new SegmentedProgress { BackColor = KeyColor };
+                Controls.Add(_progress);
+
+                _headline = new Label
+                {
+                    Text = "",
+                    Font = new Font("Segoe UI", 14, FontStyle.Bold),
+                    ForeColor = Color.FromArgb(200, 200, 200),
+                    AutoSize = true,
+                    BackColor = KeyColor
+                };
+                Controls.Add(_headline);
+
+                _start = new RoundedButton
+                {
+                    Text = "Get started",
+                    Width = 280,
+                    Height = 50,
+                    FillColor = Color.White,
+                    TextColor = Color.Black,
+                    BorderColor = Color.White,
+                    Font = new Font("Segoe UI", 10.5f, FontStyle.Regular),
+                    Cursor = Cursors.Hand,
+                    CornerRadius = 25
+                };
+                Controls.Add(_start);
+
+                _buy = new RoundedButton
+                {
+                    Text = "No device? Buy a Ledger",
+                    Width = 280,
+                    Height = 50,
+                    FillColor = Color.FromArgb(35, 35, 35),
+                    TextColor = Color.White,
+                    BorderColor = Color.FromArgb(80, 80, 80),
+                    Font = new Font("Segoe UI", 10.5f, FontStyle.Regular),
+                    Cursor = Cursors.Hand,
+                    CornerRadius = 25
+                };
+                Controls.Add(_buy);
+
+                _sync = new RoundedButton
+                {
+                    Text = "Sync with another Ledger Wallet app",
+                    Width = 340,
+                    Height = 44,
+                    FillColor = KeyColor,
+                    TextColor = Color.White,
+                    BorderColor = KeyColor,
+                    HoverFillColor = Color.FromArgb(50, 50, 50),
+                    HoverBorderColor = Color.FromArgb(80, 80, 80),
+                    Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+                    Cursor = Cursors.Hand,
+                    CornerRadius = 22
+                };
+                Controls.Add(_sync);
+
+                _footer = new LinkLabel
+                {
+                    Text = "By continuing, you agree to Ledger's Terms & Conditions and Privacy Policy. Ledger provides no financial advice.\n" +
+                           "Swap and staking services are provided by third parties.",
+                    ForeColor = Color.White,
+                    Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+                    LinkColor = Color.White,
+                    ActiveLinkColor = Color.LightGray,
+                    VisitedLinkColor = Color.White,
+                    BackColor = KeyColor,
+                    AutoSize = false,
+                    TextAlign = ContentAlignment.TopCenter,
+                    Size = new Size(780, 55)
+                };
+
+                // Underline "Terms & Conditions"
+                int tcStart = _footer.Text.IndexOf("Terms & Conditions");
+                _footer.Links.Add(tcStart, "Terms & Conditions".Length, "https://www.ledger.com/terms-and-conditions");
+
+                // Underline "Privacy Policy"
+                int ppStart = _footer.Text.IndexOf("Privacy Policy");
+                _footer.Links.Add(ppStart, "Privacy Policy".Length, "https://www.ledger.com/privacy-policy");
+
+                _footer.LinkClicked += (s, ev) =>
+                {
+                    if (ev.Link.LinkData is string url)
+                        System.Diagnostics.Process.Start(url);
+                };
+
+                Controls.Add(_footer);
+            }
+
+            void LayoutUI()
+            {
+                if (!IsHandleCreated || ClientSize.Width == 0) return;
+
+                int cx = ClientSize.Width / 2;
+                int bottom = ClientSize.Height;
+
+                _logoFlow.Left = cx - _logoFlow.Width / 2;
+                _logoFlow.Top = 14;
+
+                _progress.Left = cx - _progress.Width / 2;
+                _progress.Top = _logoFlow.Bottom + 8;
+
+                _headline.Left = cx - _headline.Width / 2;
+                _headline.Top = _progress.Bottom + 14;
+
+                int buttonY = bottom - 180;
+                _start.Location = new Point(cx - _start.Width - 10, buttonY);
+                _buy.Location = new Point(cx + 10, buttonY);
+
+                _sync.Left = cx - _sync.Width / 2;
+                _sync.Top = buttonY + _start.Height + 14;
+
+                _footer.Left = cx - _footer.Width / 2;
+                _footer.Top = bottom - 70;
+            }
+
+            public void SetProgress(int index, double value)
+            {
+                _progress.Set(index, value);
+            }
+
+            public void ResetProgress()
+            {
+                _progress.ResetAll();
+            }
+
+            public void SetHeadline(string text)
+            {
+                _headline.Text = text;
+                LayoutUI();
+            }
+        }
+
+        #endregion
+
+        #region Custom Controls
+
+        /// <summary>
+        /// Owner-drawn button with fully rounded (pill-shaped) corners.
+        /// Uses a GraphicsPath-based Region so the KeyColor shows through the corners,
+        /// making them transparent over the video.
+        /// </summary>
+        class RoundedButton : Control
+        {
+            Color _fill = Color.White;
+            Color _text = Color.Black;
+            Color _border = Color.White;
+            Color? _hoverFill = null;
+            Color? _hoverBorder = null;
+            int _radius = 25;
+            bool _hovered;
+            bool _pressed;
+
+            public Color FillColor
+            {
+                get { return _fill; }
+                set { _fill = value; Invalidate(); }
+            }
+
+            public Color TextColor
+            {
+                get { return _text; }
+                set { _text = value; Invalidate(); }
+            }
+
+            public Color BorderColor
+            {
+                get { return _border; }
+                set { _border = value; Invalidate(); }
+            }
+
+            /// <summary>
+            /// If set, the button uses this fill color on hover instead of auto-adjusting brightness.
+            /// </summary>
+            public Color? HoverFillColor
+            {
+                get { return _hoverFill; }
+                set { _hoverFill = value; Invalidate(); }
+            }
+
+            /// <summary>
+            /// If set, the button uses this border color on hover.
+            /// </summary>
+            public Color? HoverBorderColor
+            {
+                get { return _hoverBorder; }
+                set { _hoverBorder = value; Invalidate(); }
+            }
+
+            public int CornerRadius
+            {
+                get { return _radius; }
+                set { _radius = value; UpdateRegion(); Invalidate(); }
+            }
+
+            public RoundedButton()
+            {
+                SetStyle(
+                    ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.UserPaint |
+                    ControlStyles.ResizeRedraw |
+                    ControlStyles.OptimizedDoubleBuffer,
+                    true);
+
+                Size = new Size(260, 50);
+            }
+
+            void UpdateRegion()
+            {
+                using (var path = CreateRoundedPath(ClientRectangle, _radius))
+                {
+                    Region = new Region(path);
                 }
             }
-            base.Dispose(disposing);
+
+            protected override void OnSizeChanged(EventArgs e)
+            {
+                base.OnSizeChanged(e);
+                UpdateRegion();
+            }
+
+            protected override void OnMouseEnter(EventArgs e)
+            {
+                base.OnMouseEnter(e);
+                _hovered = true;
+                Invalidate();
+            }
+
+            protected override void OnMouseLeave(EventArgs e)
+            {
+                base.OnMouseLeave(e);
+                _hovered = false;
+                _pressed = false;
+                Invalidate();
+            }
+
+            protected override void OnMouseDown(MouseEventArgs e)
+            {
+                base.OnMouseDown(e);
+                _pressed = true;
+                Invalidate();
+            }
+
+            protected override void OnMouseUp(MouseEventArgs e)
+            {
+                base.OnMouseUp(e);
+                _pressed = false;
+                Invalidate();
+            }
+
+            static Color AdjustBrightness(Color c, int amt)
+            {
+                int r = Math.Max(0, Math.Min(255, c.R + amt));
+                int g = Math.Max(0, Math.Min(255, c.G + amt));
+                int b = Math.Max(0, Math.Min(255, c.B + amt));
+                return Color.FromArgb(c.A, r, g, b);
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+                var rect = ClientRectangle;
+                rect.Width -= 1;
+                rect.Height -= 1;
+
+                using (var path = CreateRoundedPath(rect, _radius))
+                {
+                    Color fill;
+                    Color border;
+
+                    if (_pressed)
+                    {
+                        fill = _hoverFill.HasValue
+                            ? AdjustBrightness(_hoverFill.Value, 15)
+                            : AdjustBrightness(_fill, _fill.GetBrightness() > 0.5f ? -50 : 30);
+                        border = _hoverBorder ?? _border;
+                    }
+                    else if (_hovered)
+                    {
+                        fill = _hoverFill ?? AdjustBrightness(_fill, _fill.GetBrightness() > 0.5f ? -25 : 20);
+                        border = _hoverBorder ?? _border;
+                    }
+                    else
+                    {
+                        fill = _fill;
+                        border = _border;
+                    }
+
+                    using (var brush = new SolidBrush(fill))
+                    {
+                        e.Graphics.FillPath(brush, path);
+                    }
+
+                    using (var pen = new Pen(border, 1.5f))
+                    {
+                        e.Graphics.DrawPath(pen, path);
+                    }
+                }
+
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    Text,
+                    Font,
+                    rect,
+                    _text,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            }
+
+            static GraphicsPath CreateRoundedPath(Rectangle rect, int radius)
+            {
+                int d = radius * 2;
+                var path = new GraphicsPath();
+
+                path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+                path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+                path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+                path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+
+                return path;
+            }
+        }
+
+        class SegmentedProgress : Control
+        {
+            double[] p = new double[3];
+
+            public SegmentedProgress()
+            {
+                DoubleBuffered = true;
+                SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+                Size = new Size(500, 4);
+            }
+
+            public void Set(int i, double v)
+            {
+                if (i < 0 || i >= p.Length) return;
+                p[i] = Math.Max(0, Math.Min(1, v));
+                Invalidate();
+            }
+
+            public void ResetAll()
+            {
+                for (int i = 0; i < p.Length; i++) p[i] = 0;
+                Invalidate();
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                int totalWidth = Width;
+                int gap = 8;
+                int segWidth = (totalWidth - gap * (p.Length - 1)) / p.Length;
+
+                for (int i = 0; i < p.Length; i++)
+                {
+                    int x = i * (segWidth + gap);
+
+                    using (var bg = new SolidBrush(Color.FromArgb(70, 255, 255, 255)))
+                    {
+                        e.Graphics.FillRectangle(bg, x, 0, segWidth, Height);
+                    }
+
+                    int fillWidth = (int)(segWidth * p[i]);
+                    if (fillWidth > 0)
+                    {
+                        e.Graphics.FillRectangle(Brushes.White, x, 0, fillWidth, Height);
+                    }
+                }
+            }
         }
 
         #endregion
