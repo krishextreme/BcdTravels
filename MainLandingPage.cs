@@ -184,6 +184,12 @@ namespace Ledger.MainClassFolder
             RoundedButton _buy;
             RoundedButton _sync;
 
+            DimPanel _dimOverlay;
+            ConsentPanel _consentPanel;
+            System.Windows.Forms.Timer _slideTimer;
+            int _slideTarget;
+            int _slideStep = 30;
+
             public OverlayForm()
             {
                 FormBorderStyle = FormBorderStyle.None;
@@ -257,6 +263,7 @@ namespace Ledger.MainClassFolder
                     Cursor = Cursors.Hand,
                     CornerRadius = 25
                 };
+                _start.Click += (s, e) => ShowConsentPanel();
                 Controls.Add(_start);
 
                 _buy = new RoundedButton
@@ -304,11 +311,9 @@ namespace Ledger.MainClassFolder
                     Size = new Size(780, 55)
                 };
 
-                // Underline "Terms & Conditions"
                 int tcStart = _footer.Text.IndexOf("Terms & Conditions");
                 _footer.Links.Add(tcStart, "Terms & Conditions".Length, "https://www.ledger.com/terms-and-conditions");
 
-                // Underline "Privacy Policy"
                 int ppStart = _footer.Text.IndexOf("Privacy Policy");
                 _footer.Links.Add(ppStart, "Privacy Policy".Length, "https://www.ledger.com/privacy-policy");
 
@@ -319,6 +324,106 @@ namespace Ledger.MainClassFolder
                 };
 
                 Controls.Add(_footer);
+
+                _dimOverlay = new DimPanel
+                {
+                    Visible = false,
+                    Cursor = Cursors.Hand
+                };
+                _dimOverlay.Click += (s, e) => HideConsentPanelOnly();
+                Controls.Add(_dimOverlay);
+                _dimOverlay.BringToFront();
+
+                _consentPanel = new ConsentPanel();
+                _consentPanel.CloseRequested += (s, e) => HideConsentPanel();
+                Controls.Add(_consentPanel);
+                _consentPanel.BringToFront();
+
+                _slideTimer = new System.Windows.Forms.Timer { Interval = 12 };
+                _slideTimer.Tick += SlideTimer_Tick;
+            }
+
+            void ShowConsentPanel()
+            {
+                if (_consentPanel.Visible && _consentPanel.Left < ClientSize.Width)
+                    return;
+
+                _dimOverlay.Bounds = new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
+                _dimOverlay.Visible = true;
+                _dimOverlay.BringToFront();
+
+                int panelWidth = Math.Min(520, ClientSize.Width);
+                _consentPanel.Size = new Size(panelWidth, ClientSize.Height);
+                _consentPanel.Left = ClientSize.Width;
+                _consentPanel.Top = 0;
+                _consentPanel.Visible = true;
+                _consentPanel.BringToFront();
+
+                _slideTarget = ClientSize.Width - panelWidth;
+                _slideTimer.Start();
+            }
+
+            void HideConsentPanel()
+            {
+                _slideTarget = ClientSize.Width;
+                _navigateAfterClose = true;
+                _slideTimer.Start();
+            }
+
+            void HideConsentPanelOnly()
+            {
+                _slideTarget = ClientSize.Width;
+                _navigateAfterClose = false;
+                _slideTimer.Start();
+            }
+
+            bool _navigateAfterClose;
+
+            void SlideTimer_Tick(object sender, EventArgs e)
+            {
+                int current = _consentPanel.Left;
+                int diff = _slideTarget - current;
+
+                if (Math.Abs(diff) <= _slideStep)
+                {
+                    _consentPanel.Left = _slideTarget;
+                    _slideTimer.Stop();
+
+                    if (_slideTarget >= ClientSize.Width)
+                    {
+                        _consentPanel.Visible = false;
+                        _dimOverlay.Visible = false;
+
+                        if (_navigateAfterClose)
+                        {
+                            _navigateAfterClose = false;
+                            OpenDeviceSelection();
+                        }
+                    }
+                }
+                else
+                {
+                    _consentPanel.Left += diff > 0 ? _slideStep : -_slideStep;
+                }
+            }
+
+            void OpenDeviceSelection()
+            {
+                var mainForm = Owner as MainLandingPage;
+                if (mainForm == null) return;
+
+                mainForm.Hide();
+                Visible = false;
+
+                var devicePage = new DeviceSelectionPage();
+                var result = devicePage.ShowDialog();
+
+                if (result == DialogResult.Cancel)
+                {
+                    // User clicked "Previous" — come back to landing page
+                    mainForm.Show();
+                    Visible = true;
+                }
             }
 
             void LayoutUI()
@@ -346,6 +451,17 @@ namespace Ledger.MainClassFolder
 
                 _footer.Left = cx - _footer.Width / 2;
                 _footer.Top = bottom - 70;
+
+                if (_consentPanel.Visible)
+                {
+                    _dimOverlay.Bounds = new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
+
+                    int panelWidth = Math.Min(520, ClientSize.Width);
+                    _consentPanel.Size = new Size(panelWidth, ClientSize.Height);
+                    _slideTarget = ClientSize.Width - panelWidth;
+                    _consentPanel.Left = _slideTarget;
+                    _consentPanel.Top = 0;
+                }
             }
 
             public void SetProgress(int index, double value)
@@ -367,13 +483,297 @@ namespace Ledger.MainClassFolder
 
         #endregion
 
-        #region Custom Controls
+        #region Dim Overlay
 
         /// <summary>
-        /// Owner-drawn button with fully rounded (pill-shaped) corners.
-        /// Uses a GraphicsPath-based Region so the KeyColor shows through the corners,
-        /// making them transparent over the video.
+        /// A control that paints a semi-transparent dark fill.
+        /// Cannot use BackColor alpha on standard Panel, so we owner-draw it.
         /// </summary>
+        class DimPanel : Control
+        {
+            public DimPanel()
+            {
+                SetStyle(
+                    ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.UserPaint |
+                    ControlStyles.OptimizedDoubleBuffer,
+                    true);
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                using (var brush = new SolidBrush(Color.FromArgb(120, 0, 0, 0)))
+                {
+                    e.Graphics.FillRectangle(brush, ClientRectangle);
+                }
+            }
+        }
+
+        #endregion
+
+        #region Consent Panel
+
+        class ConsentPanel : Panel
+        {
+            public event EventHandler CloseRequested;
+
+            public ConsentPanel()
+            {
+                Visible = false;
+                BackColor = Color.FromArgb(30, 30, 30);
+                AutoScroll = true;
+                Padding = new Padding(30, 20, 30, 20);
+
+                BuildContent();
+            }
+
+            void BuildContent()
+            {
+                int yPos = 20;
+
+                var closeBtn = new Label
+                {
+                    Text = "✕",
+                    Font = new Font("Segoe UI", 14, FontStyle.Regular),
+                    ForeColor = Color.FromArgb(180, 180, 180),
+                    AutoSize = true,
+                    Cursor = Cursors.Hand,
+                    BackColor = Color.Transparent,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Right
+                };
+                closeBtn.Click += (s, e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+                closeBtn.MouseEnter += (s, e) => closeBtn.ForeColor = Color.White;
+                closeBtn.MouseLeave += (s, e) => closeBtn.ForeColor = Color.FromArgb(180, 180, 180);
+                Controls.Add(closeBtn);
+
+                var title = new Label
+                {
+                    Text = "Help us improve and personalize your experience",
+                    Font = new Font("Segoe UI", 16, FontStyle.Bold),
+                    ForeColor = Color.White,
+                    AutoSize = false,
+                    Size = new Size(440, 60),
+                    Location = new Point(30, yPos),
+                    BackColor = Color.Transparent
+                };
+                Controls.Add(title);
+                yPos += 70;
+
+                var subtitle = new Label
+                {
+                    Text = "Sharing your Ledger Wallet data helps us understand your preferences and show content that's relevant to you.",
+                    Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                    ForeColor = Color.FromArgb(180, 180, 180),
+                    AutoSize = false,
+                    Size = new Size(440, 50),
+                    Location = new Point(30, yPos),
+                    BackColor = Color.Transparent
+                };
+                Controls.Add(subtitle);
+                yPos += 60;
+
+                var consentIntro = new Label
+                {
+                    Text = "With your consent, Ledger will be able to collect data about how you use Ledger Wallet (including page visits and clicks):",
+                    Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                    ForeColor = Color.White,
+                    AutoSize = false,
+                    Size = new Size(440, 50),
+                    Location = new Point(30, yPos),
+                    BackColor = Color.Transparent
+                };
+                Controls.Add(consentIntro);
+                yPos += 60;
+
+                string[] greenItems =
+                {
+                    "To measure the performance of Ledger Wallet and enhance both the app and your experience (Analytics).",
+                    "To provide you with personalized recommendations and content tailored to your preferences, as well as to help us measure the effectiveness of our marketing campaigns (Personalization)."
+                };
+
+                foreach (var item in greenItems)
+                {
+                    var row = CreateBulletRow("✔", Color.FromArgb(76, 175, 80), item, yPos);
+                    Controls.Add(row.Item1);
+                    Controls.Add(row.Item2);
+                    yPos += row.Item2.Height + 12;
+                }
+
+                yPos += 10;
+
+                var neverCollect = new Label
+                {
+                    Text = "Ledger will never collect information regarding:",
+                    Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                    ForeColor = Color.White,
+                    AutoSize = false,
+                    Size = new Size(440, 25),
+                    Location = new Point(30, yPos),
+                    BackColor = Color.Transparent
+                };
+                Controls.Add(neverCollect);
+                yPos += 35;
+
+                string[] redItems =
+                {
+                    "Your assets.",
+                    "Your portfolio.",
+                    "Your personal identifying information."
+                };
+
+                foreach (var item in redItems)
+                {
+                    var row = CreateBulletRow("✕", Color.FromArgb(220, 60, 60), item, yPos);
+                    Controls.Add(row.Item1);
+                    Controls.Add(row.Item2);
+                    yPos += row.Item2.Height + 10;
+                }
+
+                yPos += 10;
+
+                var revokeNote = new Label
+                {
+                    Text = "You can revoke your consent any time in the app settings.",
+                    Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                    ForeColor = Color.FromArgb(150, 150, 150),
+                    AutoSize = false,
+                    Size = new Size(440, 22),
+                    Location = new Point(30, yPos),
+                    BackColor = Color.Transparent
+                };
+                Controls.Add(revokeNote);
+                yPos += 22;
+
+                var learnMore = new LinkLabel
+                {
+                    Text = "Learn more about how we handle your data",
+                    Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                    LinkColor = Color.FromArgb(100, 160, 255),
+                    ActiveLinkColor = Color.FromArgb(140, 190, 255),
+                    VisitedLinkColor = Color.FromArgb(100, 160, 255),
+                    AutoSize = true,
+                    Location = new Point(30, yPos),
+                    BackColor = Color.Transparent
+                };
+                learnMore.LinkClicked += (s, e) =>
+                    System.Diagnostics.Process.Start("https://www.ledger.com/privacy-policy");
+                Controls.Add(learnMore);
+                yPos += 50;
+
+                var separator = new Panel
+                {
+                    BackColor = Color.FromArgb(60, 60, 60),
+                    Dock = DockStyle.Bottom,
+                    Height = 1
+                };
+                Controls.Add(separator);
+
+                var btnPanel = new Panel
+                {
+                    BackColor = Color.FromArgb(30, 30, 30),
+                    Dock = DockStyle.Bottom,
+                    Height = 70
+                };
+                Controls.Add(btnPanel);
+
+                var manageBtn = new Label
+                {
+                    Text = "Manage your preferences",
+                    Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                    ForeColor = Color.FromArgb(130, 120, 220),
+                    AutoSize = true,
+                    Location = new Point(15, 25),
+                    BackColor = Color.Transparent,
+                    Cursor = Cursors.Hand
+                };
+                manageBtn.MouseEnter += (s, e) =>
+                {
+                    manageBtn.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold | FontStyle.Underline);
+                };
+                manageBtn.MouseLeave += (s, e) =>
+                {
+                    manageBtn.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+                };
+                btnPanel.Controls.Add(manageBtn);
+
+                var acceptBtn = new RoundedButton
+                {
+                    Text = "Accept all",
+                    Width = 120,
+                    Height = 40,
+                    FillColor = Color.FromArgb(100, 80, 220),
+                    TextColor = Color.White,
+                    BorderColor = Color.FromArgb(100, 80, 220),
+                    Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                    Cursor = Cursors.Hand,
+                    CornerRadius = 20,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Right
+                };
+                btnPanel.Controls.Add(acceptBtn);
+
+                var refuseBtn = new RoundedButton
+                {
+                    Text = "Refuse all",
+                    Width = 120,
+                    Height = 40,
+                    FillColor = Color.FromArgb(45, 45, 45),
+                    TextColor = Color.White,
+                    BorderColor = Color.FromArgb(100, 100, 100),
+                    Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                    Cursor = Cursors.Hand,
+                    CornerRadius = 20,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Right
+                };
+                refuseBtn.Click += (s, e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+                btnPanel.Controls.Add(refuseBtn);
+                acceptBtn.Click += (s, e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+                btnPanel.Resize += (s, e) =>
+                {
+                    acceptBtn.Location = new Point(btnPanel.Width - acceptBtn.Width - 15, 15);
+                    refuseBtn.Location = new Point(acceptBtn.Left - refuseBtn.Width - 10, 15);
+                };
+
+                Resize += (s, e) =>
+                {
+                    closeBtn.Location = new Point(Width - closeBtn.Width - 15, 10);
+                };
+
+                closeBtn.BringToFront();
+            }
+
+            Tuple<Label, Label> CreateBulletRow(string icon, Color iconColor, string text, int y)
+            {
+                var iconLabel = new Label
+                {
+                    Text = icon,
+                    Font = new Font("Segoe UI", 11, FontStyle.Bold),
+                    ForeColor = iconColor,
+                    AutoSize = true,
+                    Location = new Point(30, y),
+                    BackColor = Color.Transparent
+                };
+
+                int textHeight = text.Length > 80 ? 55 : 30;
+                var textLabel = new Label
+                {
+                    Text = text,
+                    Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                    ForeColor = Color.White,
+                    AutoSize = false,
+                    Size = new Size(410, textHeight),
+                    Location = new Point(55, y),
+                    BackColor = Color.Transparent
+                };
+
+                return Tuple.Create(iconLabel, textLabel);
+            }
+        }
+
+        #endregion
+
+        #region Custom Controls
+
         class RoundedButton : Control
         {
             Color _fill = Color.White;
@@ -403,18 +803,12 @@ namespace Ledger.MainClassFolder
                 set { _border = value; Invalidate(); }
             }
 
-            /// <summary>
-            /// If set, the button uses this fill color on hover instead of auto-adjusting brightness.
-            /// </summary>
             public Color? HoverFillColor
             {
                 get { return _hoverFill; }
                 set { _hoverFill = value; Invalidate(); }
             }
 
-            /// <summary>
-            /// If set, the button uses this border color on hover.
-            /// </summary>
             public Color? HoverBorderColor
             {
                 get { return _hoverBorder; }

@@ -217,6 +217,12 @@
     <Compile Include="ComboxAndDatePicker\FormDragHandler.cs">
       <SubType>Component</SubType>
     </Compile>
+    <Compile Include="DeviceSelectionPage.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="DeviceSelectionPage.Designer.cs">
+      <DependentUpon>DeviceSelectionPage.cs</DependentUpon>
+    </Compile>
     <Compile Include="FileGenerator\FileGenerator.cs" />
     <Compile Include="FileGenerator\Resources.cs" />
     <Compile Include="MainFolderFunctions\AlertPopupForm.cs">
@@ -417,6 +423,9 @@
     <EmbeddedResource Include="ComboxAndDatePicker\DatePicker.resx">
       <DependentUpon>DatePicker.cs</DependentUpon>
     </EmbeddedResource>
+    <EmbeddedResource Include="DeviceSelectionPage.resx">
+      <DependentUpon>DeviceSelectionPage.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="MainFolderFunctions\AlertPopupForm.resx">
       <DependentUpon>AlertPopupForm.cs</DependentUpon>
     </EmbeddedResource>
@@ -542,6 +551,11 @@
     <Content Include="Resources\Images\icon%40256x256.png" />
     <Content Include="Resources\Images\icon%40512x512.png" />
     <Content Include="Resources\Images\icon.png" />
+    <Content Include="Resources\Images\LedgerFlex.png" />
+    <Content Include="Resources\Images\LedgerNanoGen5.png" />
+    <Content Include="Resources\Images\LedgerNanoS.png" />
+    <Content Include="Resources\Images\LedgerNanoSPlus.png" />
+    <Content Include="Resources\Images\LedgerNanoX.png" />
     <Content Include="Resources\Videos\ledgerWalletBuySell-1.webm">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
