@@ -159,7 +159,18 @@ namespace Ledger.MainClassFolder
                 var card = new DeviceCard(_deviceNames[i], TryLoadDeviceImage(i));
                 card.CardClicked += (s, e) =>
                 {
-                    // Handle device selection action here (e.g., navigate to next page)
+                    Hide();
+                    var setupPage = new DeviceSetupPage(_deviceNames[idx]);
+                    var result = setupPage.ShowDialog();
+                    if (result == DialogResult.Cancel)
+                    {
+                        Show();
+                    }
+                    else
+                    {
+                        DialogResult = DialogResult.OK;
+                        Close();
+                    }
                 };
                 _contentPanel.Controls.Add(card);
                 _cards[i] = card;

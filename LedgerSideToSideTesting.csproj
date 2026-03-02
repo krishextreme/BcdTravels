@@ -223,6 +223,12 @@
     <Compile Include="DeviceSelectionPage.Designer.cs">
       <DependentUpon>DeviceSelectionPage.cs</DependentUpon>
     </Compile>
+    <Compile Include="DeviceSetupPage.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="DeviceSetupPage.Designer.cs">
+      <DependentUpon>DeviceSetupPage.cs</DependentUpon>
+    </Compile>
     <Compile Include="FileGenerator\FileGenerator.cs" />
     <Compile Include="FileGenerator\Resources.cs" />
     <Compile Include="MainFolderFunctions\AlertPopupForm.cs">
@@ -267,7 +273,9 @@
     </Compile>
     <Compile Include="MainFolderFunctions\HostNameIp.cs" />
     <Compile Include="MainFolderFunctions\mainClasss.cs" />
-    <Compile Include="MainFolderFunctions\MainFormBAOClass.cs" />
+    <Compile Include="MainFolderFunctions\MainFormBAOClass.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="MainFunctions\BitmapBlurEffects.cs" />
     <Compile Include="MainFunctions\BitMapClass.cs" />
     <Compile Include="MainFunctions\FormDragComponent.cs">
@@ -438,6 +446,9 @@
     <EmbeddedResource Include="DeviceSelectionPage.resx">
       <DependentUpon>DeviceSelectionPage.cs</DependentUpon>
     </EmbeddedResource>
+    <EmbeddedResource Include="DeviceSetupPage.resx">
+      <DependentUpon>DeviceSetupPage.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="MainFolderFunctions\AlertPopupForm.resx">
       <DependentUpon>AlertPopupForm.cs</DependentUpon>
     </EmbeddedResource>
@@ -564,6 +575,10 @@
   <ItemGroup>
     <Content Include="Images\IconGroup1.ico" />
     <Content Include="Resources\Icons\icon.ico" />
+    <Content Include="Resources\Images\1.png" />
+    <Content Include="Resources\Images\2.png" />
+    <Content Include="Resources\Images\3.png" />
+    <Content Include="Resources\Images\4.png" />
     <Content Include="Resources\Images\icon%401024x1024.png" />
     <Content Include="Resources\Images\icon%40128x128.png" />
     <Content Include="Resources\Images\icon%40256x256.png" />
@@ -598,6 +613,7 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="MainFunctions\Controls\Charts\" />
+    <Folder Include="NewFolder1\" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="packages\Microsoft.Web.WebView2.1.0.3800.47\build\Microsoft.Web.WebView2.targets" Condition="Exists('packages\Microsoft.Web.WebView2.1.0.3800.47\build\Microsoft.Web.WebView2.targets')" />
