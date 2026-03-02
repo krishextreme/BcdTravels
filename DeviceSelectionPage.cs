@@ -31,7 +31,6 @@ namespace Ledger.MainClassFolder
 
         Panel _headerPanel;
         Panel _contentPanel;
-        int _selectedIndex = -1;
         DeviceCard[] _cards;
         Label _title;
 
@@ -158,7 +157,10 @@ namespace Ledger.MainClassFolder
             {
                 int idx = i;
                 var card = new DeviceCard(_deviceNames[i], TryLoadDeviceImage(i));
-                card.CardClicked += (s, e) => SelectDevice(idx);
+                card.CardClicked += (s, e) =>
+                {
+                    // Handle device selection action here (e.g., navigate to next page)
+                };
                 _contentPanel.Controls.Add(card);
                 _cards[i] = card;
             }
@@ -211,15 +213,8 @@ namespace Ledger.MainClassFolder
 
         void SelectDevice(int index)
         {
-            if (_selectedIndex == index)
-                _selectedIndex = -1;
-            else
-                _selectedIndex = index;
-
-            for (int i = 0; i < _cards.Length; i++)
-            {
-                _cards[i].IsSelected = (i == _selectedIndex);
-            }
+            // No selection state — directly handle the device choice here
+            // For now, just a placeholder for future navigation
         }
 
         void LayoutCards()
@@ -260,23 +255,17 @@ namespace Ledger.MainClassFolder
         {
             string _deviceName;
             Image _deviceImage;
-            bool _isSelected;
             bool _hovered;
             RoundedButton _selectBtn;
 
-            public event EventHandler CardClicked;
+            // Hover animation
+            Timer _animTimer;
+            float _animAngle;
+            int _imgOffsetY;
+            const int AnimAmplitude = 8;
+            const int AnimInterval = 30;
 
-            public bool IsSelected
-            {
-                get { return _isSelected; }
-                set
-                {
-                    _isSelected = value;
-                    if (_selectBtn != null)
-                        _selectBtn.Visible = value;
-                    Invalidate();
-                }
-            }
+            public event EventHandler CardClicked;
 
             public DeviceCard(string name, Image image)
             {
@@ -306,19 +295,45 @@ namespace Ledger.MainClassFolder
                     Visible = false
                 };
                 _selectBtn.Click += (s, e) => CardClicked?.Invoke(this, EventArgs.Empty);
-                // Forward mouse events from the button back to the card so hover stays active
-                _selectBtn.MouseEnter += (s, e) => { _hovered = true; Invalidate(); };
+                _selectBtn.MouseEnter += (s, e) => { SetHovered(true); };
                 _selectBtn.MouseLeave += (s, e) =>
                 {
-                    // Only clear hover if the mouse truly left the card bounds
                     Point pt = PointToClient(Cursor.Position);
                     if (!ClientRectangle.Contains(pt))
-                    {
-                        _hovered = false;
-                        Invalidate();
-                    }
+                        SetHovered(false);
                 };
                 Controls.Add(_selectBtn);
+
+                _animTimer = new Timer { Interval = AnimInterval };
+                _animTimer.Tick += AnimTimer_Tick;
+            }
+
+            void SetHovered(bool hovered)
+            {
+                if (_hovered == hovered) return;
+                _hovered = hovered;
+
+                if (_hovered)
+                {
+                    _animAngle = 0f;
+                    _selectBtn.Visible = true;
+                    _animTimer.Start();
+                }
+                else
+                {
+                    _animTimer.Stop();
+                    _imgOffsetY = 0;
+                    _selectBtn.Visible = false;
+                }
+
+                Invalidate();
+            }
+
+            void AnimTimer_Tick(object sender, EventArgs e)
+            {
+                _animAngle += 0.12f;
+                _imgOffsetY = (int)(Math.Sin(_animAngle) * AnimAmplitude);
+                Invalidate();
             }
 
             protected override void OnSizeChanged(EventArgs e)
@@ -336,29 +351,18 @@ namespace Ledger.MainClassFolder
                     btnY);
             }
 
-            protected override void OnClick(EventArgs e)
-            {
-                base.OnClick(e);
-                CardClicked?.Invoke(this, EventArgs.Empty);
-            }
-
             protected override void OnMouseEnter(EventArgs e)
             {
                 base.OnMouseEnter(e);
-                _hovered = true;
-                Invalidate();
+                SetHovered(true);
             }
 
             protected override void OnMouseLeave(EventArgs e)
             {
                 base.OnMouseLeave(e);
-                // Only clear hover if the mouse truly left the card (not entering a child)
                 Point pt = PointToClient(Cursor.Position);
                 if (!ClientRectangle.Contains(pt))
-                {
-                    _hovered = false;
-                    Invalidate();
-                }
+                    SetHovered(false);
             }
 
             protected override void OnPaint(PaintEventArgs e)
@@ -367,10 +371,10 @@ namespace Ledger.MainClassFolder
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-                // Full-height column background
-                if (_isSelected)
+                // Background only on hover
+                if (_hovered)
                 {
-                    using (var brush = new SolidBrush(Color.FromArgb(32, 32, 32)))
+                    using (var brush = new SolidBrush(Color.FromArgb(28, 28, 28)))
                         g.FillRectangle(brush, ClientRectangle);
 
                     using (var pen = new Pen(Color.FromArgb(50, 50, 50), 1f))
@@ -379,11 +383,6 @@ namespace Ledger.MainClassFolder
                         g.DrawLine(pen, Width - 1, 0, Width - 1, Height);
                     }
                 }
-                else if (_hovered)
-                {
-                    using (var brush = new SolidBrush(Color.FromArgb(25, 25, 25)))
-                        g.FillRectangle(brush, ClientRectangle);
-                }
 
                 // Image area
                 int imgAreaTop = 40;
@@ -391,23 +390,25 @@ namespace Ledger.MainClassFolder
 
                 if (_deviceImage != null)
                 {
-                    int maxW = Width - 40;
-                    int maxH = imgAreaHeight - 20;
+                    int maxW = Width - 80;
+                    int maxH = imgAreaHeight - 60;
 
                     float scale = Math.Min((float)maxW / _deviceImage.Width,
                                            (float)maxH / _deviceImage.Height);
+                    scale = Math.Min(scale, 0.6f);
+
                     int drawW = (int)(_deviceImage.Width * scale);
                     int drawH = (int)(_deviceImage.Height * scale);
                     int imgX = (Width - drawW) / 2;
-                    int imgY = imgAreaTop + (imgAreaHeight - drawH) / 2;
+                    int imgY = imgAreaTop + (imgAreaHeight - drawH) / 2 + _imgOffsetY;
 
                     g.DrawImage(_deviceImage, imgX, imgY, drawW, drawH);
                 }
                 else
                 {
-                    int phW = 80, phH = 120;
+                    int phW = 60, phH = 90;
                     int phX = (Width - phW) / 2;
-                    int phY = imgAreaTop + (imgAreaHeight - phH) / 2;
+                    int phY = imgAreaTop + (imgAreaHeight - phH) / 2 + _imgOffsetY;
                     using (var pen = new Pen(Color.FromArgb(60, 60, 60), 1f))
                         g.DrawRectangle(pen, phX, phY, phW, phH);
                 }
@@ -419,6 +420,16 @@ namespace Ledger.MainClassFolder
                     new Font("Segoe UI", 11f, FontStyle.Regular),
                     nameRect, Color.White,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.Top);
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    _animTimer?.Stop();
+                    _animTimer?.Dispose();
+                }
+                base.Dispose(disposing);
             }
 
             internal static GraphicsPath CreateRoundedPath(Rectangle rect, int radius)
