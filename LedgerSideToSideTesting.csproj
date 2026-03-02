@@ -286,6 +286,12 @@
     <Compile Include="MainLandingPage.Designer.cs">
       <DependentUpon>MainLandingPage.cs</DependentUpon>
     </Compile>
+    <Compile Include="PreferencesPanel.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="PreferencesPanel.Designer.cs">
+      <DependentUpon>PreferencesPanel.cs</DependentUpon>
+    </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="MainFolderFunctions\UrlAndPort.cs" />
@@ -394,6 +400,12 @@
     <Compile Include="ScrollBar\VerticalTaskStepperProgress.cs">
       <SubType>Component</SubType>
     </Compile>
+    <Compile Include="SplashScreen.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="SplashScreen.Designer.cs">
+      <DependentUpon>SplashScreen.cs</DependentUpon>
+    </Compile>
     <Compile Include="UIHelper\UIHelper1.cs">
       <SubType>UserControl</SubType>
     </Compile>
@@ -454,6 +466,9 @@
     <EmbeddedResource Include="MainFunctions\Properties\Resources.resx" />
     <EmbeddedResource Include="MainLandingPage.resx">
       <DependentUpon>MainLandingPage.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="PreferencesPanel.resx">
+      <DependentUpon>PreferencesPanel.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
@@ -521,6 +536,9 @@
     </EmbeddedResource>
     <EmbeddedResource Include="ScrollBar\RoundedProgressBar.resx">
       <DependentUpon>RoundedProgressBar.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SplashScreen.resx">
+      <DependentUpon>SplashScreen.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="UIHelper\UIHelper1.resx">
       <DependentUpon>UIHelper1.cs</DependentUpon>

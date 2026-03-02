@@ -694,6 +694,34 @@ namespace Ledger.MainClassFolder
                 {
                     manageBtn.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
                 };
+
+                manageBtn.Click += (s, e) =>
+                {
+                    // Convert the consent panel's position to screen coordinates
+                    var parent = this.Parent as Form;
+                    Point screenPos;
+                    if (parent != null)
+                        screenPos = parent.PointToScreen(this.Location);
+                    else
+                        screenPos = this.PointToScreen(Point.Empty);
+
+                    var prefs = new PreferencesPanel
+                    {
+                        Size = this.Size,
+                        Location = screenPos
+                    };
+                    this.Visible = false;
+                    var result = prefs.ShowDialog();
+                    if (result == DialogResult.OK)
+                    {
+                        CloseRequested?.Invoke(this, EventArgs.Empty);
+                    }
+                    else
+                    {
+                        this.Visible = true;
+                    }
+                };
+
                 btnPanel.Controls.Add(manageBtn);
 
                 var acceptBtn = new RoundedButton

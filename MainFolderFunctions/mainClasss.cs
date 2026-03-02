@@ -23,13 +23,15 @@ namespace Ledger.MainClassFolder
         [STAThread]
         private static void Main()
         {
-            //Application.Run((Form)new Second2Form()); // was ܟΗ\uFFFD\uFFFDܠᚺRכܩBΑOו unicode
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
 
-            //Application.Run((Form)new MainFormBAOClass()); // was ܟΗ\uFFFD\uFFFDܠᚺRכܩBΑOו unicode
+            // Show splash screen first
+            var splash = new SplashScreen();
+            splash.ShowDialog();
 
-            Application.Run((Form)new MainLandingPage());
-
-
+            // Then run the main form
+            Application.Run(new MainLandingPage());
         }
     }
 }
