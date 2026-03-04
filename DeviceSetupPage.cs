@@ -13,6 +13,7 @@ namespace Ledger.MainClassFolder
         Panel _contentPanel;
         Panel _innerPanel;
         int _scrollY;
+        bool _allowClose;
 
         public DeviceSetupPage(string deviceName)
         {
@@ -21,13 +22,12 @@ namespace Ledger.MainClassFolder
             _deviceName = deviceName;
 
             Text = "Ledger Wallet";
-            //FormBorderStyle = FormBorderStyle.None;
+            FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             BackColor = Color.FromArgb(18, 18, 18);
             DoubleBuffered = true;
             MinimumSize = new Size(900, 600);
             AutoScaleMode = AutoScaleMode.None;
-            WindowState = FormWindowState.Maximized;
 
             // Fill the working area (screen minus taskbar)
             var screen = Screen.PrimaryScreen.WorkingArea;
@@ -35,6 +35,16 @@ namespace Ledger.MainClassFolder
             Size = screen.Size;
 
             BuildUI();
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (!_allowClose && DialogResult == DialogResult.None)
+            {
+                e.Cancel = true;
+                return;
+            }
+            base.OnFormClosing(e);
         }
 
         void BuildUI()
@@ -56,7 +66,7 @@ namespace Ledger.MainClassFolder
                 Cursor = Cursors.Hand,
                 BackColor = Color.Transparent
             };
-            prevBtn.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+            prevBtn.Click += (s, e) => { _allowClose = true; DialogResult = DialogResult.Cancel; Close(); };
             prevBtn.MouseEnter += (s, e) => prevBtn.ForeColor = Color.FromArgb(180, 180, 180);
             prevBtn.MouseLeave += (s, e) => prevBtn.ForeColor = Color.White;
             _headerPanel.Controls.Add(prevBtn);
@@ -217,6 +227,7 @@ namespace Ledger.MainClassFolder
             panel.Controls.Add(title);
 
             var card = CreateOptionCard(cardInfo);
+            card.ArrowClicked += (s, e) => { _allowClose = true; DialogResult = DialogResult.OK; Close(); };
             panel.Controls.Add(card);
 
             panel.Resize += (s, e) =>
@@ -249,6 +260,31 @@ namespace Ledger.MainClassFolder
 
             var card1 = CreateOptionCard(card1Info);
             var card2 = CreateOptionCard(card2Info);
+
+            // Card 1 (Connect) — close
+            card1.ArrowClicked += (s, e) => { _allowClose = true; DialogResult = DialogResult.OK; Close(); };
+
+            // Card 2 (Restore) — open RecoveryPhrasePage
+            card2.ArrowClicked += (s, e) =>
+            {
+                using (var recoveryPage = new RecoveryPhrasePage(_deviceName))
+                {
+                    Hide();
+                    var result = recoveryPage.ShowDialog(this);
+                    if (result == DialogResult.OK)
+                    {
+                        _allowClose = true;
+                        DialogResult = DialogResult.OK;
+                        Close();
+                    }
+                    else
+                    {
+                        Show();
+                        BringToFront();
+                    }
+                }
+            };
+
             panel.Controls.Add(card1);
             panel.Controls.Add(card2);
 
@@ -278,9 +314,7 @@ namespace Ledger.MainClassFolder
             }
             catch { }
 
-            var card = new OptionCard(info.Title, info.Description, img);
-            card.ArrowClicked += (s, e) => { DialogResult = DialogResult.OK; Close(); };
-            return card;
+            return new OptionCard(info.Title, info.Description, img);
         }
 
         string ResolveImagePath(string file)

@@ -34,14 +34,22 @@ namespace Ledger.MainClassFolder
         DeviceCard[] _cards;
         Label _title;
 
+        static Image[] _imageCache;
+
         public DeviceSelectionPage()
         {
             InitializeComponent();
             Text = "Ledger Wallet";
-            WindowState = FormWindowState.Maximized;
+            StartPosition = FormStartPosition.Manual;
+            FormBorderStyle = FormBorderStyle.None;
             BackColor = Color.FromArgb(18, 18, 18);
             DoubleBuffered = true;
             MinimumSize = new Size(900, 600);
+            AutoScaleMode = AutoScaleMode.None;
+
+            var screen = Screen.PrimaryScreen.WorkingArea;
+            Location = screen.Location;
+            Size = screen.Size;
 
             BuildUI();
             Resize += (s, e) => LayoutCards();
@@ -188,18 +196,24 @@ namespace Ledger.MainClassFolder
 
         Image TryLoadDeviceImage(int index)
         {
+            if (_imageCache == null)
+                _imageCache = new Image[_deviceImageKeys.Length];
+
+            if (_imageCache[index] != null)
+                return _imageCache[index];
+
             try
             {
                 string path = ResolveImagePath(_deviceImageKeys[index] + ".png");
                 if (path != null)
-                    return Image.FromFile(path);
-
-                Debug.WriteLine($"[DeviceSelectionPage] Image not found: {_deviceImageKeys[index]}.png");
+                {
+                    // Load into memory so the file isn't locked
+                    using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read))
+                        _imageCache[index] = Image.FromStream(fs);
+                    return _imageCache[index];
+                }
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[DeviceSelectionPage] Error loading {_deviceImageKeys[index]}: {ex.Message}");
-            }
+            catch { }
 
             return null;
         }
@@ -270,14 +284,23 @@ namespace Ledger.MainClassFolder
             bool _hovered;
             RoundedButton _selectBtn;
 
-            // Hover animation
+            // Hover animation — simplified
             Timer _animTimer;
-            float _animAngle;
+            int _animFrame;
             int _imgOffsetY;
+            static readonly int[] _offsets = PrecalcOffsets();
             const int AnimAmplitude = 8;
-            const int AnimInterval = 30;
 
             public event EventHandler CardClicked;
+
+            static int[] PrecalcOffsets()
+            {
+                // Pre-calculate 60 frames of sine wave offsets
+                var arr = new int[60];
+                for (int i = 0; i < 60; i++)
+                    arr[i] = (int)(Math.Sin(i * 0.12) * AnimAmplitude);
+                return arr;
+            }
 
             public DeviceCard(string name, Image image)
             {
@@ -316,7 +339,8 @@ namespace Ledger.MainClassFolder
                 };
                 Controls.Add(_selectBtn);
 
-                _animTimer = new Timer { Interval = AnimInterval };
+                // Slower interval = fewer redraws per second
+                _animTimer = new Timer { Interval = 50 };
                 _animTimer.Tick += AnimTimer_Tick;
             }
 
@@ -327,7 +351,7 @@ namespace Ledger.MainClassFolder
 
                 if (_hovered)
                 {
-                    _animAngle = 0f;
+                    _animFrame = 0;
                     _selectBtn.Visible = true;
                     _animTimer.Start();
                 }
@@ -343,9 +367,14 @@ namespace Ledger.MainClassFolder
 
             void AnimTimer_Tick(object sender, EventArgs e)
             {
-                _animAngle += 0.12f;
-                _imgOffsetY = (int)(Math.Sin(_animAngle) * AnimAmplitude);
-                Invalidate();
+                _animFrame = (_animFrame + 1) % _offsets.Length;
+                int newOffset = _offsets[_animFrame];
+                if (newOffset == _imgOffsetY) return; // Skip repaint if nothing changed
+                _imgOffsetY = newOffset;
+                // Only invalidate the image area, not the whole control
+                int imgAreaTop = 40;
+                int imgAreaHeight = (int)(Height * 0.45);
+                Invalidate(new Rectangle(0, imgAreaTop - AnimAmplitude, Width, imgAreaHeight + AnimAmplitude * 2));
             }
 
             protected override void OnSizeChanged(EventArgs e)
@@ -380,7 +409,9 @@ namespace Ledger.MainClassFolder
             protected override void OnPaint(PaintEventArgs e)
             {
                 var g = e.Graphics;
-                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.SmoothingMode = SmoothingMode.HighSpeed;
+                g.InterpolationMode = InterpolationMode.Low;
+                g.CompositingQuality = CompositingQuality.HighSpeed;
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
                 // Background only on hover
