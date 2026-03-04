@@ -36,6 +36,7 @@ namespace Ledger.MainClassFolder
 
         public DeviceSelectionPage()
         {
+            InitializeComponent();
             Text = "Ledger Wallet";
             WindowState = FormWindowState.Maximized;
             BackColor = Color.FromArgb(18, 18, 18);

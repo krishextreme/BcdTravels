@@ -21,12 +21,18 @@ namespace Ledger.MainClassFolder
             _deviceName = deviceName;
 
             Text = "Ledger Wallet";
-            FormBorderStyle = FormBorderStyle.None;
-            WindowState = FormWindowState.Maximized;
+            //FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.Manual;
             BackColor = Color.FromArgb(18, 18, 18);
             DoubleBuffered = true;
             MinimumSize = new Size(900, 600);
             AutoScaleMode = AutoScaleMode.None;
+            WindowState = FormWindowState.Maximized;
+
+            // Fill the working area (screen minus taskbar)
+            var screen = Screen.PrimaryScreen.WorkingArea;
+            Location = screen.Location;
+            Size = screen.Size;
 
             BuildUI();
         }
