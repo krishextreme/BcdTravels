@@ -22,7 +22,7 @@ namespace Ledger.MainClassFolder
             _deviceName = deviceName;
 
             Text = "Ledger Wallet";
-            FormBorderStyle = FormBorderStyle.None;
+            // FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             BackColor = Color.FromArgb(18, 18, 18);
             DoubleBuffered = true;
@@ -227,7 +227,7 @@ namespace Ledger.MainClassFolder
             panel.Controls.Add(title);
 
             var card = CreateOptionCard(cardInfo);
-            card.ArrowClicked += (s, e) => { _allowClose = true; DialogResult = DialogResult.OK; Close(); };
+            card.ArrowClicked += (s, e) => OpenRecoveryPage();
             panel.Controls.Add(card);
 
             panel.Resize += (s, e) =>
@@ -261,29 +261,9 @@ namespace Ledger.MainClassFolder
             var card1 = CreateOptionCard(card1Info);
             var card2 = CreateOptionCard(card2Info);
 
-            // Card 1 (Connect) — close
-            card1.ArrowClicked += (s, e) => { _allowClose = true; DialogResult = DialogResult.OK; };
-
-            // Card 2 (Restore) — open RecoveryPhrasePage on top
-            card2.ArrowClicked += (s, e) =>
-            {
-                Enabled = false;
-                using (var recoveryPage = new RecoveryPhrasePage(_deviceName))
-                {
-                    var result = recoveryPage.ShowDialog(this);
-                    if (result == DialogResult.OK)
-                    {
-                        _allowClose = true;
-                        DialogResult = DialogResult.OK;
-                    }
-                    else
-                    {
-                        Enabled = true;
-                        BringToFront();
-                        Activate();
-                    }
-                }
-            };
+            // Both arrows open RecoveryPhrasePage
+            card1.ArrowClicked += (s, e) => OpenRecoveryPage();
+            card2.ArrowClicked += (s, e) => OpenRecoveryPage();
 
             panel.Controls.Add(card1);
             panel.Controls.Add(card2);
@@ -301,6 +281,26 @@ namespace Ledger.MainClassFolder
             };
 
             return panel;
+        }
+
+        void OpenRecoveryPage()
+        {
+            Enabled = false;
+            using (var recoveryPage = new RecoveryPhrasePage(_deviceName))
+            {
+                var result = recoveryPage.ShowDialog(this);
+                if (result == DialogResult.OK)
+                {
+                    _allowClose = true;
+                    DialogResult = DialogResult.OK;
+                }
+                else
+                {
+                    Enabled = true;
+                    BringToFront();
+                    Activate();
+                }
+            }
         }
 
         OptionCard CreateOptionCard(SetupCardInfo info)
@@ -345,6 +345,7 @@ namespace Ledger.MainClassFolder
             Image _image;
             bool _hovered;
             Rectangle _arrowRect;
+            bool _arrowHovered;
 
             public event EventHandler ArrowClicked;
 
@@ -359,12 +360,31 @@ namespace Ledger.MainClassFolder
                     ControlStyles.ResizeRedraw |
                     ControlStyles.OptimizedDoubleBuffer,
                     true);
-                Cursor = Cursors.Hand;
+                Cursor = Cursors.Default;
             }
 
             protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); _hovered = true; Invalidate(); }
-            protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); _hovered = false; Invalidate(); }
-            protected override void OnClick(EventArgs e) { base.OnClick(e); ArrowClicked?.Invoke(this, EventArgs.Empty); }
+            protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); _hovered = false; _arrowHovered = false; Invalidate(); }
+
+            protected override void OnMouseMove(MouseEventArgs e)
+            {
+                base.OnMouseMove(e);
+                bool overArrow = _arrowRect.Contains(e.Location);
+                if (overArrow != _arrowHovered)
+                {
+                    _arrowHovered = overArrow;
+                    Cursor = _arrowHovered ? Cursors.Hand : Cursors.Default;
+                    Invalidate(_arrowRect);
+                }
+            }
+
+            protected override void OnClick(EventArgs e)
+            {
+                base.OnClick(e);
+                var pos = PointToClient(Cursor.Position);
+                if (_arrowRect.Contains(pos))
+                    ArrowClicked?.Invoke(this, EventArgs.Empty);
+            }
 
             protected override void OnPaint(PaintEventArgs e)
             {
@@ -421,7 +441,7 @@ namespace Ledger.MainClassFolder
                 using (var path = new GraphicsPath())
                 {
                     path.AddEllipse(_arrowRect);
-                    Color fill = _hovered ? Color.FromArgb(220, 220, 220) : Color.White;
+                    Color fill = _arrowHovered ? Color.FromArgb(200, 200, 200) : Color.White;
                     using (var brush = new SolidBrush(fill))
                         g.FillPath(brush, path);
                 }

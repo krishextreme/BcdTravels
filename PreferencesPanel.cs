@@ -17,10 +17,10 @@ namespace Ledger.MainClassFolder
         {
             InitializeComponent();
 
-            Text = "Ledger Wallet";
-            FormBorderStyle = FormBorderStyle.None;
+            Text = "Ledger Wallet";            
             BackColor = Color.FromArgb(30, 30, 30);
             StartPosition = FormStartPosition.Manual;
+            WindowState = FormWindowState.Maximized;
             ShowInTaskbar = false;
 
             BuildContent();

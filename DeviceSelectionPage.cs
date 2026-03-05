@@ -41,7 +41,6 @@ namespace Ledger.MainClassFolder
             InitializeComponent();
             Text = "Ledger Wallet";
             StartPosition = FormStartPosition.Manual;
-            FormBorderStyle = FormBorderStyle.None;
             BackColor = Color.FromArgb(18, 18, 18);
             DoubleBuffered = true;
             MinimumSize = new Size(900, 600);

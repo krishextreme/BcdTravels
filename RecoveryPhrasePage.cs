@@ -18,7 +18,6 @@ namespace Ledger.MainClassFolder
             _deviceName = deviceName;
 
             Text = "Ledger Wallet";
-            FormBorderStyle = FormBorderStyle.None;
             WindowState = FormWindowState.Maximized;
             BackColor = Color.FromArgb(18, 18, 18);
             DoubleBuffered = true;
