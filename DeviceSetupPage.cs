@@ -262,25 +262,25 @@ namespace Ledger.MainClassFolder
             var card2 = CreateOptionCard(card2Info);
 
             // Card 1 (Connect) — close
-            card1.ArrowClicked += (s, e) => { _allowClose = true; DialogResult = DialogResult.OK; Close(); };
+            card1.ArrowClicked += (s, e) => { _allowClose = true; DialogResult = DialogResult.OK; };
 
-            // Card 2 (Restore) — open RecoveryPhrasePage
+            // Card 2 (Restore) — open RecoveryPhrasePage on top
             card2.ArrowClicked += (s, e) =>
             {
+                Enabled = false;
                 using (var recoveryPage = new RecoveryPhrasePage(_deviceName))
                 {
-                    Hide();
                     var result = recoveryPage.ShowDialog(this);
                     if (result == DialogResult.OK)
                     {
                         _allowClose = true;
                         DialogResult = DialogResult.OK;
-                        Close();
                     }
                     else
                     {
-                        Show();
+                        Enabled = true;
                         BringToFront();
+                        Activate();
                     }
                 }
             };
@@ -412,7 +412,8 @@ namespace Ledger.MainClassFolder
                         TextFormatFlags.Left | TextFormatFlags.WordBreak);
                 }
 
-                int aSize = 32;
+                // Filled white circle with dark arrow
+                int aSize = 38;
                 int aX = Width - left - aSize - 2;
                 int aY = Height - left - aSize - 2;
                 _arrowRect = new Rectangle(aX, aY, aSize, aSize);
@@ -420,12 +421,13 @@ namespace Ledger.MainClassFolder
                 using (var path = new GraphicsPath())
                 {
                     path.AddEllipse(_arrowRect);
-                    using (var pen = new Pen(Color.FromArgb(60, 60, 60), 1f))
-                        g.DrawPath(pen, path);
+                    Color fill = _hovered ? Color.FromArgb(220, 220, 220) : Color.White;
+                    using (var brush = new SolidBrush(fill))
+                        g.FillPath(brush, path);
                 }
 
-                using (var f = new Font("Segoe UI", 11f))
-                    TextRenderer.DrawText(g, "→", f, _arrowRect, Color.White,
+                using (var f = new Font("Segoe UI", 13f))
+                    TextRenderer.DrawText(g, "→", f, _arrowRect, Color.FromArgb(30, 30, 30),
                         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             }
         }
