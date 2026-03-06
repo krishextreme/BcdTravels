@@ -45,7 +45,7 @@ namespace Ledger.MainClassFolder
             DoubleBuffered = true;
             MinimumSize = new Size(900, 600);
             AutoScaleMode = AutoScaleMode.None;
-
+            WindowState = FormWindowState.Maximized;
             var screen = Screen.PrimaryScreen.WorkingArea;
             Location = screen.Location;
             Size = screen.Size;
@@ -168,11 +168,37 @@ namespace Ledger.MainClassFolder
                 card.CardClicked += (s, e) =>
                 {
                     Hide();
-                    var setupPage = new DeviceSetupPage(_deviceNames[idx]);
-                    var result = setupPage.ShowDialog();
-                    if (result == DialogResult.Cancel)
+                    var currentResult = DialogResult.None;
+                    string deviceName = _deviceNames[idx];
+
+                    // Setup page
+                    using (var setupPage = new DeviceSetupPage(deviceName))
+                        currentResult = setupPage.ShowDialog(this);
+
+                    // If setup page requested recovery, open it
+                    while (currentResult == DialogResult.Retry)
+                    {
+                        using (var recoveryPage = new RecoveryPhrasePage(deviceName))
+                            currentResult = recoveryPage.ShowDialog(this);
+
+                        // If user clicked Back on recovery, go back to setup
+                        if (currentResult == DialogResult.Cancel)
+                        {
+                            using (var setupPage = new DeviceSetupPage(deviceName))
+                                currentResult = setupPage.ShowDialog(this);
+                        }
+                    }
+
+                    if (currentResult == DialogResult.Cancel)
                     {
                         Show();
+                        BringToFront();
+                    }
+                    else if (currentResult == DialogResult.Abort)
+                    {
+                        // X was clicked — exit the entire app
+                        DialogResult = DialogResult.Abort;
+                        Close();
                     }
                     else
                     {
@@ -273,6 +299,16 @@ namespace Ledger.MainClassFolder
         {
             base.OnShown(e);
             LayoutCards();
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // If user clicked X (not ← Previous), signal app exit
+            if (e.CloseReason == CloseReason.UserClosing && DialogResult == DialogResult.None)
+            {
+                DialogResult = DialogResult.Abort;
+            }
+            base.OnFormClosing(e);
         }
 
         // ── Device Card Control ──

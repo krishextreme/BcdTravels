@@ -22,13 +22,12 @@ namespace Ledger.MainClassFolder
             _deviceName = deviceName;
 
             Text = "Ledger Wallet";
-            // FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             BackColor = Color.FromArgb(18, 18, 18);
             DoubleBuffered = true;
             MinimumSize = new Size(900, 600);
             AutoScaleMode = AutoScaleMode.None;
-
+            WindowState = FormWindowState.Maximized;
             // Fill the working area (screen minus taskbar)
             var screen = Screen.PrimaryScreen.WorkingArea;
             Location = screen.Location;
@@ -285,22 +284,9 @@ namespace Ledger.MainClassFolder
 
         void OpenRecoveryPage()
         {
-            Enabled = false;
-            using (var recoveryPage = new RecoveryPhrasePage(_deviceName))
-            {
-                var result = recoveryPage.ShowDialog(this);
-                if (result == DialogResult.OK)
-                {
-                    _allowClose = true;
-                    DialogResult = DialogResult.OK;
-                }
-                else
-                {
-                    Enabled = true;
-                    BringToFront();
-                    Activate();
-                }
-            }
+            // Signal to parent: close this form and open RecoveryPhrasePage
+            _allowClose = true;
+            DialogResult = DialogResult.Retry;
         }
 
         OptionCard CreateOptionCard(SetupCardInfo info)

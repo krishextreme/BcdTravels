@@ -424,6 +424,12 @@ namespace Ledger.MainClassFolder
                     mainForm.Show();
                     Visible = true;
                 }
+                else if (result == DialogResult.Abort)
+                {
+                    // X was clicked — close everything
+                    mainForm.Close();
+                    Close();
+                }
             }
 
             void LayoutUI()
